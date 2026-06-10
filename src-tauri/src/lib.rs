@@ -15,6 +15,11 @@ use timer::SharedState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: a second launch (e.g. from the Start-Menu
+        // shortcut) exits immediately and just surfaces the running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            commands::open_settings(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_notification::init())

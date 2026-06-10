@@ -26,6 +26,7 @@ tauri-plugin-notification = "2.3.3"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-store = "2.4.3"
 user-idle = "0.6.0"
+tauri-plugin-single-instance = "2.4.2"
 
 [target."cfg(windows)".dependencies]
 winrt-toast-reborn = "0.3.8"
