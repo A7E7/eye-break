@@ -15,6 +15,7 @@ pub struct TrayHandles {
 /// Build the tray icon + menu and stash the dynamic handles in managed state.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let confirm = MenuItem::with_id(app, "confirm", "👀  I'm looking", false, None::<&str>)?;
+    let look_away = MenuItem::with_id(app, "look_away", "Look away now", true, None::<&str>)?;
     let pause_30 = MenuItem::with_id(app, "pause_30", "Pause 30 minutes", true, None::<&str>)?;
     let pause_60 = MenuItem::with_id(app, "pause_60", "Pause 1 hour", true, None::<&str>)?;
     let pause_inf = MenuItem::with_id(app, "pause_inf", "Pause until I resume", true, None::<&str>)?;
@@ -27,7 +28,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(
         app,
-        &[&confirm, &pause, &resume, &snooze, &sep, &settings, &quit],
+        &[
+            &confirm, &look_away, &pause, &resume, &snooze, &sep, &settings, &quit,
+        ],
     )?;
 
     let icon = TrayIconBuilder::with_id("main")
@@ -52,6 +55,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         "confirm" => crate::commands::do_confirm(app),
+        "look_away" => crate::commands::do_look_away(app),
         "pause_30" => crate::commands::do_pause(app, Some(30)),
         "pause_60" => crate::commands::do_pause(app, Some(60)),
         "pause_inf" => crate::commands::do_pause(app, None),

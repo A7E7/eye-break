@@ -40,6 +40,11 @@ pub fn confirm_looking(app: AppHandle) {
     do_confirm(&app);
 }
 
+#[tauri::command]
+pub fn look_away_now(app: AppHandle) {
+    do_look_away(&app);
+}
+
 // ---- Shared actions (also called from the tray and toast callback) ------
 
 /// Confirm the user is looking away → start the break countdown.
@@ -52,6 +57,20 @@ pub fn do_confirm(app: &AppHandle) {
         }
         s.phase = Phase::Break;
         s.remaining = s.settings.break_seconds as i64;
+    }
+    crate::tray::refresh(app);
+}
+
+/// Start a break right now (skip the wait). When it finishes, the timer's
+/// Break handling fires the "done" notification and resets a fresh work cycle.
+pub fn do_look_away(app: &AppHandle) {
+    {
+        let state = app.state::<SharedState>();
+        let mut s = state.lock().unwrap();
+        s.phase = Phase::Break;
+        s.remaining = s.settings.break_seconds as i64;
+        s.idle_paused = false;
+        s.pause_indefinite = false;
     }
     crate::tray::refresh(app);
 }

@@ -7,11 +7,6 @@ use tauri::{AppHandle, Emitter, Manager};
 /// The shared, mutable app state, registered with Tauri's managed state.
 pub type SharedState = Mutex<AppState>;
 
-/// After this many seconds in AwaitingConfirm, re-fire the reminder once.
-const GRACE_SECS: i64 = 60;
-/// After this many seconds in AwaitingConfirm with no response, skip the break.
-const SKIP_AFTER_SECS: i64 = 120;
-
 /// Spawn the 1 Hz background loop that drives the state machine.
 pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || loop {
@@ -38,23 +33,15 @@ fn tick(app: &AppHandle) {
                 s.remaining -= 1;
                 if s.remaining <= 0 {
                     s.phase = Phase::AwaitingConfirm;
-                    s.awaiting_elapsed = 0;
-                    s.renotified = false;
                     notify::reminder(app, sound);
                     tray_dirty = true;
                 }
             }
         }
         Phase::AwaitingConfirm => {
-            s.awaiting_elapsed += 1;
-            if !s.renotified && s.awaiting_elapsed >= GRACE_SECS {
-                s.renotified = true;
-                notify::reminder(app, sound);
-            } else if s.awaiting_elapsed >= SKIP_AFTER_SECS {
-                // Ignored for too long — skip this break and start over.
-                s.start_working();
-                tray_dirty = true;
-            }
+            // Hold here until the user confirms (the reminder toast is pinned
+            // on screen). The next work interval must not start until this
+            // look-away has actually been taken.
         }
         Phase::Break => {
             s.remaining -= 1;

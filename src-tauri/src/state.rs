@@ -24,10 +24,6 @@ pub struct AppState {
     pub remaining: i64,
     /// True when a Paused phase has no scheduled end.
     pub pause_indefinite: bool,
-    /// Seconds spent in AwaitingConfirm, used for the re-notify / skip grace.
-    pub awaiting_elapsed: i64,
-    /// Whether the grace re-notify has already fired this reminder.
-    pub renotified: bool,
     /// True while the Working countdown is frozen because the user is idle.
     pub idle_paused: bool,
 }
@@ -40,8 +36,6 @@ impl AppState {
             phase: Phase::Working,
             remaining: work,
             pause_indefinite: false,
-            awaiting_elapsed: 0,
-            renotified: false,
             idle_paused: false,
         }
     }
@@ -50,8 +44,6 @@ impl AppState {
     pub fn start_working(&mut self) {
         self.phase = Phase::Working;
         self.remaining = self.settings.work_secs();
-        self.awaiting_elapsed = 0;
-        self.renotified = false;
         self.idle_paused = false;
         self.pause_indefinite = false;
     }

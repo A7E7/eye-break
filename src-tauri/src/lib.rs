@@ -25,6 +25,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // Brand notifications (Windows toasts say "Eye Break").
+            notify::init_branding(&handle);
+
             // Load settings and seed the shared state, then build the tray.
             let settings = Settings::load(&handle);
             app.manage(SharedState::new(AppState::new(settings)));
@@ -53,6 +56,7 @@ pub fn run() {
             commands::get_state,
             commands::save_settings,
             commands::confirm_looking,
+            commands::look_away_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

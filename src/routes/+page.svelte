@@ -53,6 +53,10 @@
     }, 550);
   }
 
+  function lookAway() {
+    invoke("look_away_now");
+  }
+
   function step(key: "workMinutes" | "breakSeconds" | "snoozeMinutes", delta: number, min: number) {
     if (!settings) return;
     const next = Math.round((Number(settings[key]) + delta) * 100) / 100;
@@ -99,6 +103,8 @@
     <div class="detail">{status.detail}</div>
     {#if awaiting}
       <button class="confirm" onclick={() => invoke("confirm_looking")}>I'm looking</button>
+    {:else if snap?.phase !== "break"}
+      <button class="lookaway" onclick={lookAway}>Look away now</button>
     {/if}
   </section>
 
@@ -279,6 +285,21 @@
   }
   .confirm:hover { transform: translateY(-1px); box-shadow: 0 10px 22px #f9c74f66; }
   .confirm:active { transform: translateY(0); }
+
+  .lookaway {
+    margin-top: 14px;
+    padding: 9px 22px;
+    border: 1px solid #2dd4bf66;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #7ee8c8;
+    background: #2dd4bf18;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s;
+  }
+  .lookaway:hover { background: #2dd4bf2e; transform: translateY(-1px); }
+  .lookaway:active { transform: translateY(0); }
 
   .settings {
     margin-top: 16px;
