@@ -12,6 +12,11 @@ const config = {
     adapter: adapter({
       fallback: "index.html",
     }),
+    // Tauri serves from the root, so base is empty there. The GitHub Pages
+    // workflow sets BASE_PATH (e.g. "/eye-break") for the project site.
+    paths: {
+      base: process.env.BASE_PATH ?? "",
+    },
   },
 };
 

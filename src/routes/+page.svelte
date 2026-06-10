@@ -1,66 +1,95 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { core } from "$lib/core";
+  import type { Settings, Snapshot } from "$lib/types";
 
-  type Settings = {
-    workMinutes: number;
-    breakSeconds: number;
-    startOnLogin: boolean;
-    skipOnIdle: boolean;
-    idleThresholdSeconds: number;
-    soundOnReminder: boolean;
-    snoozeMinutes: number;
-  };
-
-  type Snapshot = {
-    phase: "working" | "awaitingConfirm" | "break" | "paused";
-    remaining: number;
-    idlePaused: boolean;
-    settings: Settings;
-  };
+  const isWeb = core.platform === "web";
+  const REPO = "A7E7/eye-break";
+  const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 
   let settings = $state<Settings | null>(null);
   let snap = $state<Snapshot | null>(null);
   let savedFlash = $state(false);
 
+  // web-only
+  let notifPerm = $state<NotificationPermission | "unsupported">("default");
+  let downloads = $state<{ win?: string; macArm?: string; macIntel?: string }>({});
+
+  const os = detectOs();
+
   onMount(() => {
-    let unlisten: (() => void) | undefined;
+    if (isWeb && typeof document !== "undefined") {
+      document.documentElement.classList.add("web");
+    }
+    let unsub: (() => void) | undefined;
     (async () => {
-      settings = await invoke<Settings>("get_settings");
-      snap = await invoke<Snapshot>("get_state");
-      unlisten = await listen<Snapshot>("state-changed", (e) => {
-        snap = e.payload;
-      });
+      settings = await core.getSettings();
+      snap = await core.getState();
+      unsub = await core.subscribe((s) => (snap = s));
+      if (isWeb) {
+        notifPerm =
+          typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+        loadDownloads();
+      }
     })();
-    return () => unlisten?.();
+    return () => unsub?.();
   });
 
   async function save() {
     if (!settings) return;
-    // Clamp to sane minimums before persisting.
     settings.workMinutes = Math.max(0.05, settings.workMinutes);
     settings.breakSeconds = Math.max(1, Math.round(settings.breakSeconds));
     settings.snoozeMinutes = Math.max(1, Math.round(settings.snoozeMinutes));
     settings.idleThresholdSeconds = Math.max(10, Math.round(settings.idleThresholdSeconds));
-    await invoke("save_settings", { settings });
+    await core.saveSettings(settings);
     savedFlash = true;
-    // Brief confirmation, then tuck the window back to the tray.
     setTimeout(() => {
       savedFlash = false;
-      getCurrentWindow().hide();
+      core.dismiss();
     }, 550);
   }
 
   function lookAway() {
-    invoke("look_away_now");
+    core.lookAwayNow();
+  }
+
+  function confirm() {
+    core.confirmLooking();
   }
 
   function step(key: "workMinutes" | "breakSeconds" | "snoozeMinutes", delta: number, min: number) {
     if (!settings) return;
     const next = Math.round((Number(settings[key]) + delta) * 100) / 100;
     settings[key] = Math.max(min, next);
+  }
+
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") return;
+    notifPerm = await Notification.requestPermission();
+  }
+
+  function detectOs(): "windows" | "mac" | "other" {
+    if (typeof navigator === "undefined") return "other";
+    const ua = navigator.userAgent;
+    if (/Win/i.test(ua)) return "windows";
+    if (/Mac/i.test(ua)) return "mac";
+    return "other";
+  }
+
+  async function loadDownloads() {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
+      if (!r.ok) return;
+      const data = await r.json();
+      for (const a of data.assets ?? []) {
+        const n: string = a.name;
+        if (n.endsWith("-setup.exe")) downloads.win = a.browser_download_url;
+        else if (n.endsWith("aarch64.dmg")) downloads.macArm = a.browser_download_url;
+        else if (n.endsWith("x64.dmg")) downloads.macIntel = a.browser_download_url;
+      }
+    } catch {
+      /* fall back to the releases page links */
+    }
   }
 
   function fmt(secs: number): string {
@@ -85,16 +114,14 @@
   });
 
   const awaiting = $derived(snap?.phase === "awaitingConfirm");
-
-  function closeWindow() {
-    getCurrentWindow().hide();
-  }
 </script>
 
 <div class="titlebar" data-tauri-drag-region>
   <span class="dot" data-tauri-drag-region></span>
   <span class="brand" data-tauri-drag-region>20·20·20</span>
-  <button class="close" onclick={closeWindow} aria-label="Hide">×</button>
+  {#if !isWeb}
+    <button class="close" onclick={() => core.dismiss()} aria-label="Hide">×</button>
+  {/if}
 </div>
 
 <main class="card">
@@ -102,11 +129,20 @@
     <div class="big">{status.label}</div>
     <div class="detail">{status.detail}</div>
     {#if awaiting}
-      <button class="confirm" onclick={() => invoke("confirm_looking")}>I'm looking</button>
+      <button class="confirm" onclick={confirm}>I'm looking</button>
     {:else if snap?.phase !== "break"}
       <button class="lookaway" onclick={lookAway}>Look away now</button>
     {/if}
   </section>
+
+  {#if isWeb && notifPerm !== "granted" && notifPerm !== "unsupported"}
+    <button class="notif" onclick={enableNotifications}>
+      🔔 Enable notifications
+    </button>
+  {/if}
+  {#if isWeb && notifPerm === "unsupported"}
+    <p class="hint">Your browser doesn't support notifications.</p>
+  {/if}
 
   {#if settings}
     <section class="settings">
@@ -130,40 +166,71 @@
         </div>
       </div>
 
-      <div class="divider"></div>
+      {#if !isWeb}
+        <div class="divider"></div>
 
-      <label class="toggle">
-        <input type="checkbox" bind:checked={settings.startOnLogin} />
-        <span class="track"><span class="knob"></span></span>
-        <span class="toggle-label">Start on login</span>
-      </label>
+        <label class="toggle">
+          <input type="checkbox" bind:checked={settings.startOnLogin} />
+          <span class="track"><span class="knob"></span></span>
+          <span class="toggle-label">Start on login</span>
+        </label>
 
-      <label class="toggle">
-        <input type="checkbox" bind:checked={settings.skipOnIdle} />
-        <span class="track"><span class="knob"></span></span>
-        <span class="toggle-label">Pause when I'm idle</span>
-      </label>
+        <label class="toggle">
+          <input type="checkbox" bind:checked={settings.skipOnIdle} />
+          <span class="track"><span class="knob"></span></span>
+          <span class="toggle-label">Pause when I'm idle</span>
+        </label>
 
-      <label class="toggle">
-        <input type="checkbox" bind:checked={settings.soundOnReminder} />
-        <span class="track"><span class="knob"></span></span>
-        <span class="toggle-label">Play a sound</span>
-      </label>
+        <label class="toggle">
+          <input type="checkbox" bind:checked={settings.soundOnReminder} />
+          <span class="track"><span class="knob"></span></span>
+          <span class="toggle-label">Play a sound</span>
+        </label>
 
-      <div class="field small">
-        <label for="snooze">Snooze adds</label>
-        <div class="stepper">
-          <button class="step" onclick={() => step("snoozeMinutes", -1, 1)} aria-label="decrease">−</button>
-          <input id="snooze" type="number" min="1" step="1" bind:value={settings.snoozeMinutes} />
-          <span class="unit">min</span>
-          <button class="step" onclick={() => step("snoozeMinutes", 1, 1)} aria-label="increase">+</button>
+        <div class="field small">
+          <label for="snooze">Snooze adds</label>
+          <div class="stepper">
+            <button class="step" onclick={() => step("snoozeMinutes", -1, 1)} aria-label="decrease">−</button>
+            <input id="snooze" type="number" min="1" step="1" bind:value={settings.snoozeMinutes} />
+            <span class="unit">min</span>
+            <button class="step" onclick={() => step("snoozeMinutes", 1, 1)} aria-label="increase">+</button>
+          </div>
         </div>
-      </div>
+      {/if}
 
       <button class="save" class:saved={savedFlash} onclick={save}>
         {savedFlash ? "Saved ✓" : "Save"}
       </button>
     </section>
+
+    {#if isWeb}
+      <section class="download">
+        <div class="dl-title">Want it always on, even when this tab is closed?</div>
+        <div class="dl-sub">Get the lightweight desktop app — it lives in your system tray.</div>
+        <div class="dl-buttons">
+          <a
+            class="dl"
+            class:primary={os === "windows"}
+            href={downloads.win ?? RELEASES_PAGE}
+          >
+            <span class="dl-os">Windows</span>
+            <span class="dl-meta">.exe installer</span>
+          </a>
+          <a
+            class="dl"
+            class:primary={os === "mac"}
+            href={downloads.macArm ?? RELEASES_PAGE}
+          >
+            <span class="dl-os">macOS (Apple Silicon)</span>
+            <span class="dl-meta">.dmg</span>
+          </a>
+          <a class="dl" href={downloads.macIntel ?? RELEASES_PAGE}>
+            <span class="dl-os">macOS (Intel)</span>
+            <span class="dl-meta">.dmg</span>
+          </a>
+        </div>
+      </section>
+    {/if}
   {/if}
 </main>
 
@@ -178,6 +245,24 @@
 
   :global(*) {
     box-sizing: border-box;
+  }
+
+  /* Web: scrollable, centered card on a filled background (the desktop build
+     is a fixed frameless window, so these only apply in the browser). */
+  :global(html.web),
+  :global(html.web body) {
+    overflow: auto;
+    min-height: 100%;
+  }
+  :global(html.web body) {
+    background: linear-gradient(160deg, #11111b, #0b1120);
+    padding-top: 18px;
+  }
+  :global(html.web) .titlebar,
+  :global(html.web) .card {
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .titlebar {
@@ -301,6 +386,27 @@
   .lookaway:hover { background: #2dd4bf2e; transform: translateY(-1px); }
   .lookaway:active { transform: translateY(0); }
 
+  .notif {
+    width: 100%;
+    margin-top: 12px;
+    padding: 9px;
+    border: 1px solid #2dd4bf44;
+    border-radius: 10px;
+    background: #2dd4bf12;
+    color: #7ee8c8;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .notif:hover { background: #2dd4bf24; }
+  .hint {
+    margin: 12px 0 0;
+    font-size: 12px;
+    opacity: 0.5;
+    text-align: center;
+  }
+
   .settings {
     margin-top: 16px;
     display: flex;
@@ -319,7 +425,6 @@
   }
   .field.small label { font-size: 12.5px; opacity: 0.7; }
 
-  /* Hide the native number spinners everywhere. */
   :global(input[type="number"]::-webkit-outer-spin-button),
   :global(input[type="number"]::-webkit-inner-spin-button) {
     -webkit-appearance: none;
@@ -444,4 +549,47 @@
   .save.saved {
     background: linear-gradient(180deg, #a6e3a1, #94d88c);
   }
+
+  .download {
+    margin: 16px 12px 14px;
+    padding: 16px;
+    border-radius: 14px;
+    background: #11111b88;
+    border: 1px solid #ffffff10;
+    color: #cdd6f4;
+  }
+  .dl-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .dl-sub {
+    margin-top: 3px;
+    font-size: 12px;
+    opacity: 0.6;
+  }
+  .dl-buttons {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dl {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #ffffff1a;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    text-decoration: none;
+    transition: border-color 0.12s, transform 0.12s;
+  }
+  .dl:hover { border-color: #2dd4bf66; transform: translateY(-1px); }
+  .dl.primary {
+    border-color: #2dd4bf;
+    background: #2dd4bf16;
+  }
+  .dl-os { font-size: 13.5px; font-weight: 600; }
+  .dl-meta { font-size: 11px; opacity: 0.5; }
 </style>
