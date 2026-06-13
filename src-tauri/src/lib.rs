@@ -30,8 +30,22 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // macOS: run as a menu-bar "agent" — no Dock icon, no app menu bar.
+            // The tray status item is the entire UI (see the README). Without
+            // this the app launches as a normal windowed app: a Dock icon
+            // appears but no window ever opens, so it looks broken. The bundled
+            // build also sets LSUIElement (src-tauri/Info.plist); doing it here
+            // too covers `cargo run`/dev and avoids a launch-time Dock flash.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Brand notifications (Windows toasts say "Eye Break").
             notify::init_branding(&handle);
+
+            // macOS delivers reminders through Notification Center, which
+            // silently drops them until the app is authorized — request on
+            // first run so the reminders can actually appear. No-op elsewhere.
+            notify::ensure_permission(&handle);
 
             // Load settings and seed the shared state, then build the tray.
             let settings = Settings::load(&handle);

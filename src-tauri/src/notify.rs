@@ -22,6 +22,23 @@ pub fn init_branding(app: &AppHandle) {
     let _ = app;
 }
 
+/// Ensure we're allowed to post notifications. macOS (and some Linux setups)
+/// gate Notification Center behind a per-app permission and silently drop
+/// notifications until it's granted, so request it once at startup. The Windows
+/// path uses its own toast manager and doesn't need this.
+pub fn ensure_permission(app: &AppHandle) {
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri_plugin_notification::{NotificationExt, PermissionState};
+        let notifier = app.notification();
+        if !matches!(notifier.permission_state(), Ok(PermissionState::Granted)) {
+            let _ = notifier.request_permission();
+        }
+    }
+    #[cfg(target_os = "windows")]
+    let _ = app;
+}
+
 /// The "look away now" reminder (carries the confirm button on Windows).
 pub fn reminder(app: &AppHandle, sound: bool) {
     #[cfg(target_os = "windows")]

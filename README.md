@@ -62,7 +62,17 @@ Signing is optional and disabled by default (builds work unsigned):
 - **Windows** — unsigned installers trigger a one-time SmartScreen "More info → Run anyway". Add an
   OV/EV code-signing cert to remove it.
 - **macOS** — Gatekeeper blocks unsigned apps; an Apple Developer account ($99/yr) lets CI
-  codesign + notarize for a clean install. See the commented secrets in the workflow.
+  codesign + notarize for a clean install. See the commented secrets in the workflow. For an
+  unsigned local build, first remove the quarantine flag:
+  `xattr -dr com.apple.quarantine "/Applications/Eye Break.app"`.
+
+### macOS notes
+
+- The app is a **menu-bar agent** (`LSUIElement`): it shows **only** in the menu bar — no Dock
+  icon and no window on launch. Click the menu-bar eye to open Settings.
+- Reminders go through **Notification Center**, so on first run macOS asks for notification
+  permission. If you don't see reminders, allow them under **System Settings → Notifications →
+  Eye Break** (the app holds in "look away" until you confirm via the menu-bar item).
 
 ## Known follow-ups
 
